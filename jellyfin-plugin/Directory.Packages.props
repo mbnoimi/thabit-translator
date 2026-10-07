@@ -1,0 +1,22 @@
+<Project>
+
+  <PropertyGroup>
+    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Jellyfin 10.11 (NuGet 10.11.0, lib/net9.0). targetAbi 10.11.0.0 means the
+         plugin also loads on newer servers (10.11.x, 12.x): Jellyfin only checks
+         targetAbi <= ApplicationVersion, and the net9.0 assembly rolls forward. -->
+    <PackageVersion Include="Jellyfin.Controller" Version="10.11.0" />
+    <PackageVersion Include="Jellyfin.Model" Version="10.11.0" />
+    <PackageVersion Include="Jellyfin.Common" Version="10.11.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+    <PackageVersion Include="xunit" Version="2.9.3" />
+    <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.5" />
+  </ItemGroup>
+
+</Project>

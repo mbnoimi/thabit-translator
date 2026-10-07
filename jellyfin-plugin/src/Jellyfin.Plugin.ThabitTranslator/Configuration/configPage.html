@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Thabit Translator</title>
+</head>
+<body>
+    <div id="ThabitTranslatorConfigPage" data-role="page" class="page type-interior pluginConfigurationPage configPage" data-require="emby-input,emby-button,emby-checkbox,emby-select">
+        <div data-role="content">
+            <div class="content-primary">
+                <h1>Thabit Translator</h1>
+                <div id="thabitPythonBanner" class="fieldDescription" style="display:none; margin-bottom:1em; padding:0.75em; background:#c62828; color:#fff; border-radius:4px;"></div>
+                <div class="fieldDescription" style="margin-bottom:1em;">
+                    Downloads, extracts or speech-to-texts subtitles for your movies and episodes and
+                    translates them with the ThabitTranslator library. Everything runs inside this
+                    container; nothing is installed on the host.
+                </div>
+
+                <form class="thabitConfigForm">
+                    <div class="verticalSection">
+                        <h2>Languages</h2>
+                        <div class="inputContainer inputContainer-withDescription">
+                            <input is="emby-input" type="text" id="thabitTargetLanguages" label="Target languages" />
+                            <div class="fieldDescription">ISO-639-1 codes, comma separated - e.g. <code>ar,en</code>. These are the languages offered in the download dialog and filled in by the scheduled task.</div>
+                        </div>
+                        <div class="inputContainer inputContainer-withDescription">
+                            <input is="emby-input" type="text" id="thabitSourceLanguage" label="Source language" />
+                            <div class="fieldDescription">Language of the subtitle the providers are asked for before it is translated (usually <code>en</code>).</div>
+                        </div>
+                    </div>
+
+                    <div class="verticalSection">
+                        <h2>Subtitle providers</h2>
+                        <label class="checkboxContainer">
+                            <input is="emby-checkbox" type="checkbox" id="thabitProviderOpenSubtitles" />
+                            <span>OpenSubtitles</span>
+                        </label>
+                        <div class="inputContainer">
+                            <input is="emby-input" type="text" id="thabitOpenSubtitlesApiKey" label="OpenSubtitles API key" autocomplete="off" />
+                        </div>
+                        <div class="inputContainer">
+                            <input is="emby-input" type="text" id="thabitOpenSubtitlesUsername" label="OpenSubtitles username" autocomplete="off" />
+                        </div>
+                        <div class="inputContainer">
+                            <input is="emby-input" type="password" id="thabitOpenSubtitlesPassword" label="OpenSubtitles password" autocomplete="off" />
+                        </div>
+                        <label class="checkboxContainer">
+                            <input is="emby-checkbox" type="checkbox" id="thabitProviderSubDl" />
+                            <span>SubDL</span>
+                        </label>
+                        <div class="inputContainer">
+                            <input is="emby-input" type="text" id="thabitSubDlApiKey" label="SubDL API key" autocomplete="off" />
+                        </div>
+                        <label class="checkboxContainer">
+                            <input is="emby-checkbox" type="checkbox" id="thabitProviderSubSource" />
+                            <span>SubSource</span>
+                        </label>
+                        <div class="inputContainer">
+                            <input is="emby-input" type="text" id="thabitSubSourceApiKey" label="SubSource API key" autocomplete="off" />
+                        </div>
+                        <div class="fieldDescription">
+                            OpenSubtitles allows about 20 downloads per account per day, SubDL 50. A spent
+                            quota is reported as a warning in the log below instead of looking like a
+                            missing subtitle.
+                        </div>
+                    </div>
+
+                    <div class="verticalSection">
+                        <h2>Speech-to-text fallback</h2>
+                        <div class="selectContainer">
+                            <select is="emby-select" id="thabitSttPolicy" label="When nothing else produces a subtitle">
+                                <option value="ask">Ask (skipped automatically in unattended runs)</option>
+                                <option value="no">Never transcribe</option>
+                                <option value="yes">Always transcribe (slow, CPU only)</option>
+                            </select>
+                        </div>
+                        <div class="fieldDescription">
+                            Vosk transcribes the audio when every provider and every embedded track
+                            failed. It takes roughly as long as the runtime of the video.
+                        </div>
+                    </div>
+
+                    <div class="verticalSection">
+                        <h2>Automatic sweep</h2>
+                        <label class="checkboxContainer">
+                            <input is="emby-checkbox" type="checkbox" id="thabitAutoEnabled" />
+                            <span>Fill in missing subtitles automatically</span>
+                        </label>
+                        <label class="checkboxContainer">
+                            <input is="emby-checkbox" type="checkbox" id="thabitAutoUseLibraryLanguages" />
+                            <span>Also honour each library's "Download subtitles in these languages" setting</span>
+                        </label>
+                        <div class="inputContainer inputContainer-withDescription">
+                            <input is="emby-input" type="number" id="thabitAutoMaxItems" pattern="[0-9]*" min="0" label="Maximum items per sweep (0 = no limit)" />
+                            <div class="fieldDescription">Keeps a first run on a large library predictable. The task appears in Dashboard &rarr; Scheduled Tasks and can be run or cancelled there.</div>
+                        </div>
+                    </div>
+
+                    <div class="verticalSection">
+                        <h2>Runtime</h2>
+                        <div class="inputContainer inputContainer-withDescription">
+                            <input is="emby-input" type="text" id="thabitPythonPath" label="Python interpreter (optional)" />
+                            <div class="fieldDescription">
+                                Leave empty to auto-detect <code>python3</code> on the server's PATH. The plugin embeds and
+                                extracts its own copy of the ThabitTranslator library; the CLI creates its virtual
+                                environment inside the plugin data folder on first use (or press
+                                <em>Prepare Python runtime</em> below).
+                            </div>
+                        </div>
+                    </div>
+
+                    <div>
+                        <button is="emby-button" type="submit" class="raised button-submit block"><span>Save</span></button>
+                    </div>
+                </form>
+
+                <div class="verticalSection">
+                    <h2>Runtime status</h2>
+                    <div id="thabitStatus" class="fieldDescription">Loading&hellip;</div>
+                    <div style="margin-top:1em;">
+                        <button is="emby-button" type="button" id="thabitPrepare" class="raised block"><span>Prepare Python runtime</span></button>
+                        <div class="fieldDescription">Creates the Python environment up front (first time downloads about 1.6 GB and takes a few minutes). Progress appears in the log below.</div>
+                    </div>
+                    <div style="margin-top:1em;">
+                        <button is="emby-button" type="button" id="thabitRunNow" class="raised block"><span>Run sweep now</span></button>
+                    </div>
+                    <div class="fieldDescription" style="margin-top:1em;">Last output of the translator:</div>
+                    <pre id="thabitLogs" style="max-height:20em; overflow:auto; white-space:pre-wrap; font-size:0.85em;"></pre>
+                    <div style="margin-top:0.5em;">
+                        <button is="emby-button" type="button" id="thabitRefresh" class="raised block"><span>Refresh</span></button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!--
+            The script stays inline on purpose: jellyfin-web inserts this markup into the
+            dashboard and every shipped plugin configuration page (TMDb, ListenBrainz, ...)
+            runs its JavaScript the same way. An external <script src> would depend on the
+            loader evaluating scripts it did not create itself.
+        -->
+        <script type="text/javascript">
+            (function () {
+                'use strict';
+
+                // Must match Plugin.PluginGuid in Plugin.cs - Jellyfin keys the
+                // configuration API off this GUID.
+                var PLUGIN_ID = '993545e6-8c2c-4074-bec4-8af2a39a976b';
+
+                function setText(selector, value) {
+                    var el = document.querySelector(selector);
+                    if (el) { el.value = value || ''; }
+                }
+
+                function setChecked(selector, value) {
+                    var el = document.querySelector(selector);
+                    if (el) { el.checked = !!value; }
+                }
+
+                function get(selector) {
+                    return document.querySelector(selector);
+                }
+
+                function enabledProviders(config) {
+                    var enabled = (config.EnabledProviders || '').toLowerCase();
+                    setChecked('#thabitProviderOpenSubtitles', enabled.indexOf('opensubtitles') !== -1);
+                    setChecked('#thabitProviderSubDl', enabled.indexOf('subdl') !== -1);
+                    setChecked('#thabitProviderSubSource', enabled.indexOf('subsource') !== -1);
+                }
+
+                function readProviders() {
+                    var list = [];
+                    if (get('#thabitProviderOpenSubtitles').checked) { list.push('opensubtitles'); }
+                    if (get('#thabitProviderSubDl').checked) { list.push('subdl'); }
+                    if (get('#thabitProviderSubSource').checked) { list.push('subsource'); }
+                    return list.join(',');
+                }
+
+                function load() {
+                    return ApiClient.getPluginConfiguration(PLUGIN_ID).then(function (config) {
+                        setText('#thabitTargetLanguages', config.TargetLanguages);
+                        setText('#thabitSourceLanguage', config.SourceLanguage);
+                        setText('#thabitOpenSubtitlesApiKey', config.OpenSubtitlesApiKey);
+                        setText('#thabitOpenSubtitlesUsername', config.OpenSubtitlesUsername);
+                        setText('#thabitOpenSubtitlesPassword', config.OpenSubtitlesPassword);
+                        setText('#thabitSubDlApiKey', config.SubDlApiKey);
+                        setText('#thabitSubSourceApiKey', config.SubSourceApiKey);
+                        setText('#thabitSttPolicy', config.SttPolicy);
+                        setText('#thabitPythonPath', config.PythonPath);
+                        setText('#thabitAutoMaxItems', config.AutoTaskMaxItems);
+                        setChecked('#thabitAutoEnabled', config.AutoTaskEnabled);
+                        setChecked('#thabitAutoUseLibraryLanguages', config.AutoTaskUseLibraryLanguages);
+                        enabledProviders(config);
+                    });
+                }
+
+                function save(e) {
+                    e.preventDefault();
+                    Dashboard.showLoadingMsg();
+
+                    ApiClient.getPluginConfiguration(PLUGIN_ID).then(function (config) {
+                        config.TargetLanguages = get('#thabitTargetLanguages').value;
+                        config.SourceLanguage = get('#thabitSourceLanguage').value;
+                        config.OpenSubtitlesApiKey = get('#thabitOpenSubtitlesApiKey').value;
+                        config.OpenSubtitlesUsername = get('#thabitOpenSubtitlesUsername').value;
+                        config.OpenSubtitlesPassword = get('#thabitOpenSubtitlesPassword').value;
+                        config.SubDlApiKey = get('#thabitSubDlApiKey').value;
+                        config.SubSourceApiKey = get('#thabitSubSourceApiKey').value;
+                        config.EnabledProviders = readProviders();
+                        config.SttPolicy = get('#thabitSttPolicy').value;
+                        config.PythonPath = get('#thabitPythonPath').value;
+                        config.AutoTaskEnabled = get('#thabitAutoEnabled').checked;
+                        config.AutoTaskUseLibraryLanguages = get('#thabitAutoUseLibraryLanguages').checked;
+                        config.AutoTaskMaxItems = parseInt(get('#thabitAutoMaxItems').value, 10) || 0;
+
+                        return ApiClient.updatePluginConfiguration(PLUGIN_ID, config)
+                            .then(Dashboard.processPluginConfigurationUpdateResult)
+                            .then(refreshStatus);
+                    }).catch(function (err) {
+                        Dashboard.hideLoadingMsg();
+                        Dashboard.alert({ title: 'Thabit Translator', message: err });
+                    });
+
+                    return false;
+                }
+
+                function api(url, type) {
+                    return ApiClient.fetch({
+                        url: ApiClient.getUrl(url),
+                        type: type || 'GET',
+                        dataType: 'json',
+                        headers: { accept: 'application/json' }
+                    });
+                }
+
+                function renderStatus(status) {
+                    var el = get('#thabitStatus');
+                    if (!el || !status) { return; }
+
+                    var banner = get('#thabitPythonBanner');
+                    if (banner) {
+                        if (status.PythonAvailable === false) {
+                            banner.textContent = 'Python was not found on this server - downloads cannot run. '
+                                + 'Install python3 (with the venv module, e.g. python3-venv) or set an interpreter '
+                                + 'path above, then press Save.';
+                            banner.style.display = 'block';
+                        } else {
+                            banner.textContent = '';
+                            banner.style.display = 'none';
+                        }
+                    }
+
+                    el.textContent = 'Library: ' + (status.LibraryPath || '?')
+                        + (status.LibraryExtracted ? ' (extracted)' : ' (not extracted)')
+                        + ' | Python: ' + (status.PythonAvailable
+                            ? (status.PythonDetail || status.PythonPath || '?')
+                            : 'NOT FOUND')
+                        + ' | Venv: ' + (status.VenvReady ? 'ready' : 'created on first run')
+                        + ' | Targets: ' + (status.TargetLanguages || '?')
+                        + ' | Providers: ' + (status.EnabledProviders || '?')
+                        + ' | Sweep: ' + (status.AutoTaskEnabled ? 'on' : 'off')
+                        + ' | Queue: ' + (status.IsBusy ? 'running' : 'idle')
+                        + ' (' + (status.PendingJobs || 0) + ' job(s))';
+                }
+
+                function renderLogs(lines) {
+                    var el = get('#thabitLogs');
+                    if (!el) { return; }
+                    el.textContent = (lines && lines.length) ? lines.join('\n') : 'Nothing yet.';
+                    el.scrollTop = el.scrollHeight;
+                }
+
+                function refreshStatus() {
+                    return api('ThabitTranslator/status').then(renderStatus).catch(function () { })
+                        .then(function () { return api('ThabitTranslator/logs?tail=100').then(renderLogs).catch(function () { }); });
+                }
+
+                function runNow() {
+                    Dashboard.showLoadingMsg();
+                    api('ThabitTranslator/run', 'POST').then(function (response) {
+                        Dashboard.hideLoadingMsg();
+                        Dashboard.alert({
+                            title: 'Thabit Translator',
+                            message: response && response.Started
+                                ? 'Sweep started. Watch the log below.'
+                                : 'Not started: ' + ((response && response.Reason) || 'unknown reason')
+                        });
+                        refreshStatus();
+                    }).catch(function (err) {
+                        Dashboard.hideLoadingMsg();
+                        Dashboard.alert({ title: 'Thabit Translator', message: err });
+                    });
+                }
+
+                function prepare() {
+                    Dashboard.showLoadingMsg();
+                    api('ThabitTranslator/prepare', 'POST').then(function (response) {
+                        Dashboard.hideLoadingMsg();
+                        Dashboard.alert({
+                            title: 'Thabit Translator',
+                            message: response && response.Started
+                                ? 'Preparing the Python runtime - the first run downloads about 1.6 GB and takes a few minutes. Watch the log below.'
+                                : 'Not started: ' + ((response && response.Reason) || 'unknown reason')
+                        });
+                        refreshStatus();
+                    }).catch(function (err) {
+                        Dashboard.hideLoadingMsg();
+                        Dashboard.alert({ title: 'Thabit Translator', message: err });
+                    });
+                }
+
+                var page = document.querySelector('.configPage');
+                if (page && !page.thabitBound) {
+                    page.thabitBound = true;
+                    page.addEventListener('pageshow', function () {
+                        Dashboard.showLoadingMsg();
+                        load().then(refreshStatus).catch(function () { }).then(function () {
+                            Dashboard.hideLoadingMsg();
+                        });
+                    });
+
+                    var form = document.querySelector('.thabitConfigForm');
+                    if (form) { form.addEventListener('submit', save); }
+
+                    var runButton = get('#thabitRunNow');
+                    if (runButton) { runButton.addEventListener('click', runNow); }
+
+                    var prepareButton = get('#thabitPrepare');
+                    if (prepareButton) { prepareButton.addEventListener('click', prepare); }
+
+                    var refreshButton = get('#thabitRefresh');
+                    if (refreshButton) { refreshButton.addEventListener('click', refreshStatus); }
+                }
+            })();
+        </script>
+    </div>
+</body>
+</html>

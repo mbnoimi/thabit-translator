@@ -1,0 +1,49 @@
+services:
+  plugin-build:
+    build:
+      context: .
+      dockerfile: Dockerfile.builder
+    command:
+      - sh
+      - -lc
+      # Restore first: jprm runs `dotnet clean` before its own restore, and
+      # clean fails with NETSDK1064 if the nuget-cache volume was wiped while
+      # the bind-mounted obj/ still claims a successful restore.
+      - dotnet restore --force --no-cache && jprm plugin build . -o /out && chown -R ${UID}:${GID} /out
+    volumes:
+      - ".:/src"
+      # The csproj embeds ../../../core/**; inside the container that resolves
+      # to /core, so the real src/core must be mounted there (read-only -
+      # only *.py is ever embedded, never thabit_translator.conf).
+      - "../core:/core:ro"
+      - "./artifacts:/out"
+      - nuget-cache:/root/.nuget/packages
+    environment:
+      PATH: "/root/.dotnet/tools:${PATH}"
+
+  plugin-test:
+    build:
+      context: .
+      dockerfile: Dockerfile.builder
+    command: ["dotnet", "test", "-c", "Release"]
+    volumes:
+      - ".:/src"
+      - "../core:/core:ro"
+      - nuget-cache:/root/.nuget/packages
+
+  jellyfin:
+    build:
+      context: ..
+      dockerfile: jellyfin-plugin/Dockerfile
+    image: thabit/jellyfin-with-plugin:10.11
+    user: "${UID}:${GID}"
+    ports:
+      - "8096:8096"
+    volumes:
+      - "./jf-config:/config"
+      - "./jf-cache:/cache"
+      - "${MEDIA_ROOT:-/home/admino/Videos/Shows/tmp/Monk}:/media:rw"
+    restart: unless-stopped
+
+volumes:
+  nuget-cache:

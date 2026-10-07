@@ -1,0 +1,44 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- Jellyfin 10.11.x is the minimum (targetAbi 10.11.0.0, net9.0). jprm
+         rewrites Version/TargetFramework from build.yaml; keep both here so a
+         plain `dotnet build` without jprm still produces the right assembly. -->
+    <TargetFramework>net9.0</TargetFramework>
+    <AssemblyName>Jellyfin.Plugin.ThabitTranslator</AssemblyName>
+    <RootNamespace>Jellyfin.Plugin.ThabitTranslator</RootNamespace>
+    <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
+    <CopyLocalLockFileAssemblies>false</CopyLocalLockFileAssemblies>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Jellyfin.Controller" ExcludeAssets="runtime" />
+    <PackageReference Include="Jellyfin.Model" ExcludeAssets="runtime" />
+    <PackageReference Include="Jellyfin.Common" ExcludeAssets="runtime" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="Configuration/configPage.html" />
+  </ItemGroup>
+
+  <!-- The whole ThabitTranslator library travels inside the assembly: at runtime
+       the plugin extracts these into <plugin data>/library/ and launches
+       thabit_translator/__main__.py from there (its own bootstrap creates the venv at
+       <plugin data>/.venv_thabit). Only *.py is matched, so the real
+       thabit_translator.conf credentials can never enter the DLL. -->
+  <ItemGroup>
+    <ThabitLibrarySource Include="../../../core/**/*.py" />
+    <EmbeddedResource Include="@(ThabitLibrarySource)"
+                      LogicalName="ThabitLibrary/%(RecursiveDir)%(Filename)%(Extension)" />
+  </ItemGroup>
+
+  <Target Name="EnsureThabitLibraryEmbedded" BeforeTargets="CoreCompile">
+    <Error Condition="'@(ThabitLibrarySource)' == ''"
+           Text="No ../../../core/**/*.py files found - build the plugin where src/core is reachable (compose mounts it at /core)." />
+  </Target>
+
+</Project>

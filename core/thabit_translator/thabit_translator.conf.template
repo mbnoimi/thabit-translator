@@ -1,0 +1,21 @@
+[opensubtitles]
+api_key = 
+username = 
+password = 
+default_language = ar
+user_agent = ThabitTranslator v1.0
+
+[subdl]
+api_key = 
+
+[subsource]
+api_key = 
+
+[settings]
+default_source_lang = en
+default_target_lang = ar
+verbose = true
+cache_dir = "~/.cache/thabit_translator"
+
+[providers]
+enabled = opensubtitles,subdl,subsource

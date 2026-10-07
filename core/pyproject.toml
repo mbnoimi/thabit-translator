@@ -1,0 +1,54 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "thabit-translator"
+version = "0.0.2.1"
+description = "CPU-only subtitle automation: download, extract, translate and transcribe subtitles"
+# README.md and LICENSE live at the repo root; setuptools refuses paths outside
+# the project root (this file's directory), so the Docker builds stage copies
+# next to this file right before `python -m build` (see deploy.sh/test-pipx.sh;
+# both are gitignored if staged by hand for a bare-metal build).
+readme = "README.md"
+# PEP 639: SPDX expression; LICENSE ships in every wheel/sdist.
+license = "LGPL-3.0-only"
+license-files = ["LICENSE"]
+requires-python = ">=3.9"
+authors = [{ name = "mbnoimi", email = "mbnoimi@gmail.com" }]
+keywords = ["subtitles", "translation", "jellyfin", "transcription", "vosk", "argos"]
+classifiers = [
+    "Environment :: Console",
+    "Intended Audience :: End Users/Desktop",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Topic :: Multimedia :: Video",
+    "Topic :: Text Processing :: Linguistic",
+]
+# Light, CPU-cheap dependencies only. The ML stack (torch, argostranslate,
+# vosk) is deliberately NOT declared: the default PyPI torch wheel drags in
+# several GB of CUDA libraries, so the first run installs it itself from
+# https://download.pytorch.org/whl/cpu (bootstrap_environment in app.py).
+# That also keeps `pipx install` fast - the ~1.6 GB ML download happens once
+# on first use instead of during installation.
+dependencies = [
+    "requests",
+    "srt",
+    "chardet",
+    "guessit",
+    "imageio-ffmpeg",
+]
+
+[project.urls]
+Homepage = "https://github.com/mbnoimi/thabit-translator"
+Issues = "https://github.com/mbnoimi/thabit-translator/issues"
+
+[project.scripts]
+thabit-translator = "thabit_translator.app:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["thabit_translator*"]
+
+[tool.setuptools.package-data]
+thabit_translator = ["thabit_translator.conf.template"]

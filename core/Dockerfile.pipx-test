@@ -1,0 +1,32 @@
+# thabit-translator packaging test: build sdist+wheel, twine-check, pipx-install,
+# smoke-test - entirely inside this container.
+#
+# The host pipx/venv/Python is NEVER touched; test-pipx.sh is the only entry
+# point. Build context = src/, allow-listed by Dockerfile.pipx-test.dockerignore
+# so core/thabit_translator.conf (real provider keys) cannot enter the image.
+
+FROM python:3.12-slim
+
+# ffmpeg + Debian /etc/os-release so the CLI's system check passes for --help
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ffmpeg ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN pip install --no-cache-dir build twine pipx
+
+# pipx must resolve entirely inside the container
+ENV PIPX_HOME=/opt/pipx \
+    PIPX_BIN_DIR=/opt/pipx/bin \
+    PIP_CACHE_DIR=/root/.cache/pip
+ENV PATH=${PIPX_BIN_DIR}:${PATH}
+
+WORKDIR /work
+# COPY of a directory copies its CONTENTS, so core/ must be addressed as the
+# destination dir itself: pyproject.toml's ../README.md and ../LICENSE resolve
+# against /work/README.md and /work/LICENSE.
+COPY core /work/core
+COPY README.md LICENSE /work/
+
+# The actual test steps live in test-pipx.sh (docker run ... bash -s), so the
+# image stays a pure toolchain + source snapshot.
+CMD ["bash", "-lc", "echo 'run via core/test-pipx.sh'; exec bash"]
