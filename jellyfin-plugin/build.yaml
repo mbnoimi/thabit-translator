@@ -1,6 +1,6 @@
 name: Thabit Translator
 guid: 993545e6-8c2c-4074-bec4-8af2a39a976b
-version: 0.0.2.1
+version: 0.0.2.2
 targetAbi: 10.11.0.0
 framework: net9.0
 overview: Fetch, extract and translate subtitles using the ThabitTranslator library.
@@ -15,4 +15,4 @@ category: Media playback
 artifacts:
   - Jellyfin.Plugin.ThabitTranslator.dll
 changelog: >
-  0.0.2.1: Initial release - subtitle provider, library sweep scheduled task, configuration page and status API.
+  0.0.2.2: Initial release - subtitle provider, library sweep scheduled task, configuration page and status API.

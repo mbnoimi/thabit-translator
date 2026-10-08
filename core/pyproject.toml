@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "thabit-translator"
-version = "0.0.2.1"
+version = "0.0.2.2"
 description = "CPU-only subtitle automation: download, extract, translate and transcribe subtitles"
 # README.md and LICENSE live at the repo root; setuptools refuses paths outside
 # the project root (this file's directory), so the Docker builds stage copies
