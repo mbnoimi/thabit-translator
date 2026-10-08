@@ -1,5 +1,31 @@
 import os
+import sys
 import configparser
+
+
+def _possible_config_paths():
+    """The ordered config lookup the CLI and the auto-workflow use.
+
+    Packaged installs (pipx, or any caller that wants to own the config) point
+    THABIT_CONFIG at their own file: next to the installed package the file
+    would be root-owned or absent. Unset, behaviour is unchanged - a source
+    checkout still finds core/thabit_translator.conf first.
+    """
+    paths = []
+    env_conf = os.environ.get('THABIT_CONFIG')
+    if env_conf:
+        paths.append(env_conf)
+    paths += [
+        # ../.. from this file = the checkout's core/ (where
+        # thabit_translator.conf sits). Under pipx this lands in
+        # site-packages/ and simply does not exist, so the search
+        # continues with the per-user paths below.
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'thabit_translator.conf'),
+        os.path.expanduser('~/.config/thabit/thabit_translator.conf'),
+        os.path.expanduser('~/.thabit_translator.conf'),
+    ]
+    return paths
+
 
 def _create_default_config():
     """Copy the shipped template to ~/.config/thabit/ on first run.
@@ -21,12 +47,32 @@ def _create_default_config():
             return None
         with open(target, 'w', encoding='utf-8') as dst:
             dst.write(content)
-        print(f"[INFO] Created config from template: {target}")
-        print("[INFO] Add your provider API keys there (see the README).")
+        print(f"[INFO] Created your settings file: {target}")
+        print("[INFO] Edit it to add your provider API keys, languages and cache preferences.")
         return target
     except OSError as e:
         print(f"[WARN] Could not create config {target}: {e}")
         return None
+
+
+def ensure_user_config():
+    """Materialise the per-user config on first run so there is always a file
+    to edit, even when the first command only prints help or opens the menu.
+
+    Creates ~/.config/thabit/thabit_translator.conf from the shipped template
+    only when no config exists anywhere yet. Callers that already decide their
+    own config location are left untouched: an explicit -c/--config argument
+    (what the Jellyfin plugin always passes) and a THABIT_CONFIG environment
+    variable both suppress creation. Returns the created path, or None.
+    """
+    if any(arg in ("-c", "--config") or arg.startswith("--config=") for arg in sys.argv[1:]):
+        return None
+    if os.environ.get('THABIT_CONFIG'):
+        return None
+    if any(os.path.exists(path) for path in _possible_config_paths()):
+        return None
+    return _create_default_config()
+
 
 def load_config(config_path=None):
     """Load configuration from .conf file with defaults."""
@@ -52,25 +98,8 @@ def load_config(config_path=None):
     }
     
     if config_path is None:
-        possible_paths = []
-        # Packaged installs (pipx, or any caller that wants to own the config)
-        # point this at the user's own file: next to the installed package the
-        # file would be root-owned or absent. Unset, behaviour is unchanged -
-        # a source checkout still finds core/thabit_translator.conf first.
-        env_conf = os.environ.get('THABIT_CONFIG')
-        if env_conf:
-            possible_paths.append(env_conf)
-        possible_paths += [
-            # ../.. from this file = the checkout's core/ (where
-            # thabit_translator.conf sits). Under pipx this lands in
-            # site-packages/ and simply does not exist, so the search
-            # continues with the per-user paths below.
-            os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'thabit_translator.conf'),
-            os.path.expanduser('~/.config/thabit/thabit_translator.conf'),
-            os.path.expanduser('~/.thabit_translator.conf')
-        ]
         config_path = None
-        for path in possible_paths:
+        for path in _possible_config_paths():
             if os.path.exists(path):
                 config_path = path
                 break

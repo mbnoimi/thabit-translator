@@ -333,6 +333,13 @@ def build_parser():
 
 
 def main():
+    # First run: materialise ~/.config/thabit/thabit_translator.conf from the
+    # shipped template so there is always a file to put settings into, even when
+    # the first command is --help or the no-argument menu. Skipped when the
+    # caller passes -c/--config or sets THABIT_CONFIG (the Jellyfin plugin).
+    from core.config import ensure_user_config
+    ensure_user_config()
+
     if len(sys.argv) == 1:
         print_header()
         print_sep()

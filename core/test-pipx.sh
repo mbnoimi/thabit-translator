@@ -54,17 +54,23 @@ echo "--- console script: thabit-translator --help"
 echo "    (first run bootstraps the CPU-only ML stack into the pipx venv)"
 thabit-translator --help
 
+echo "--- first run created ~/.config/thabit/thabit_translator.conf via --help"
+test -s /root/.config/thabit/thabit_translator.conf \
+  || { echo "FAIL: --help did not create ~/.config/thabit/thabit_translator.conf"; exit 1; }
+grep -q '\[opensubtitles\]' /root/.config/thabit/thabit_translator.conf \
+  || { echo "FAIL: created config lacks [opensubtitles]"; exit 1; }
+echo "first-run config OK"
+
 echo "--- module entry: runpy equivalent of python3 -m thabit_translator (no bootstrap)"
 python3 -c "import runpy; runpy.run_module('thabit_translator', run_name='probe'); print('runpy entry OK')"
 
-echo "--- first-run config creation in the pipx venv"
-/opt/pipx/venvs/thabit-translator/bin/python -c \
-  "from thabit_translator.core.config import load_config; p = load_config(None); assert p, 'no config path'; print('config path:', p)"
-test -s /root/.config/thabit/thabit_translator.conf \
-  || { echo "FAIL: template was not copied to ~/.config/thabit/"; exit 1; }
-grep -q '\[opensubtitles\]' /root/.config/thabit/thabit_translator.conf \
-  || { echo "FAIL: created config lacks [opensubtitles]"; exit 1; }
-echo "created config OK"
+echo "--- config load is idempotent (no second copy)"
+config_path=$(/opt/pipx/venvs/thabit-translator/bin/python -c \
+  "from thabit_translator.core.config import load_config; print(load_config(None)['_config_path'])" \
+  | tail -1)
+echo "config path: $config_path"
+test "$config_path" = "/root/.config/thabit/thabit_translator.conf" \
+  || { echo "FAIL: surprising config path: $config_path"; exit 1; }
 
 echo
 echo "PIPELINE-TESTS-OK - sdist, wheel, metadata, console script and module entry verified in Docker"
