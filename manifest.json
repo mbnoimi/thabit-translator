@@ -1,0 +1,20 @@
+[
+  {
+    "guid": "993545e6-8c2c-4074-bec4-8af2a39a976b",
+    "name": "Thabit Translator",
+    "owner": "mbnoimi",
+    "category": "Media playback",
+    "overview": "Fetch, extract and translate subtitles using the ThabitTranslator library.",
+    "description": "Adds a \"Thabit Translator\" subtitle provider to Jellyfin's per-item download menu plus a scheduled task that sweeps libraries and fills in missing subtitles. The heavy lifting (subtitle download providers, embedded-track extraction, Argos translation, Vosk speech-to-text) is done by the bundled ThabitTranslator Python library, which runs inside the container image.",
+    "versions": [
+      {
+        "version": "0.0.2.1",
+        "targetAbi": "10.11.0.0",
+        "changelog": "Initial release - subtitle provider, library sweep scheduled task, configuration page and status API.",
+        "sourceUrl": "https://github.com/mbnoimi/thabit-translator/releases/download/v0.0.2.1/thabit-translator-plugin_0.0.2.1.zip",
+        "checksum": "4144d0c52d651d9ba1a48ff6e3410067",
+        "timestamp": "2026-10-08T01:14:18"
+      }
+    ]
+  }
+]
