@@ -1,0 +1,209 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    name: Validate tag + release metadata
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - name: Four-way version sync (tag/metadata/build.yaml/pyproject/Plugin.cs)
+        run: python .github/scripts/validate-release-metadata.py --tag "${{ github.ref_name }}"
+
+  test-core:
+    name: Packaging test (pipx)
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+      - name: Restore pip cache volume
+        id: pip-cache
+        uses: actions/cache@v6
+        with:
+          path: ${{ runner.temp }}/pip-cache.tgz
+          key: pip-volume-${{ hashFiles('core/pyproject.toml', 'core/Dockerfile.pipx-test') }}
+          restore-keys: |
+            pip-volume-
+      - name: Unpack pip cache into docker volume
+        run: |
+          if [ -s "$RUNNER_TEMP/pip-cache.tgz" ]; then
+            docker volume create thabit-pip-cache
+            docker run --rm -v thabit-pip-cache:/vol -v "$RUNNER_TEMP":/b alpine:3 \
+              tar xzf /b/pip-cache.tgz -C /vol
+          fi
+      - name: Run packaging test
+        run: ./core/test-pipx.sh
+      - name: Pack pip cache volume
+        if: success() && steps.pip-cache.outputs.cache-hit != 'true'
+        run: |
+          docker run --rm -v thabit-pip-cache:/vol -v "$RUNNER_TEMP":/b alpine:3 \
+            tar czf /b/pip-cache.tgz -C /vol .
+
+  test-plugin:
+    name: Plugin tests + zip
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - name: Restore NuGet cache volume
+        id: nuget-cache
+        uses: actions/cache@v6
+        with:
+          path: ${{ runner.temp }}/nuget-cache.tgz
+          key: nuget-volume-${{ hashFiles('jellyfin-plugin/**/*.csproj', 'jellyfin-plugin/Directory.Packages.props', 'jellyfin-plugin/Dockerfile.builder') }}
+          restore-keys: |
+            nuget-volume-
+      - name: Unpack NuGet cache into docker volume
+        run: |
+          if [ -s "$RUNNER_TEMP/nuget-cache.tgz" ]; then
+            docker volume create jellyfin-plugin_nuget-cache
+            docker run --rm -v jellyfin-plugin_nuget-cache:/vol -v "$RUNNER_TEMP":/b alpine:3 \
+              tar xzf /b/nuget-cache.tgz -C /vol
+          fi
+      - name: Run xunit tests
+        working-directory: jellyfin-plugin
+        run: env UID="$(id -u)" GID="$(id -g)" docker compose run --rm plugin-test
+      - name: Build plugin zip
+        working-directory: jellyfin-plugin
+        run: env UID="$(id -u)" GID="$(id -g)" docker compose run --rm plugin-build
+      - name: Credential guard - zip must not contain .conf
+        run: |
+          zip=$(ls -t jellyfin-plugin/artifacts/*.zip | head -1)
+          if unzip -l "$zip" | grep -q '\.conf'; then
+            echo "::error::plugin zip contains a .conf file - credentials must never be packaged"
+            exit 1
+          fi
+      - uses: actions/upload-artifact@v7
+        with:
+          name: jellyfin-plugin-zip
+          path: jellyfin-plugin/artifacts/*.zip
+          if-no-files-found: error
+      - name: Pack NuGet cache volume
+        if: success() && steps.nuget-cache.outputs.cache-hit != 'true'
+        run: |
+          docker run --rm -v jellyfin-plugin_nuget-cache:/vol -v "$RUNNER_TEMP":/b alpine:3 \
+            tar czf /b/nuget-cache.tgz -C /vol .
+
+  publish:
+    name: Build + publish release
+    needs: [test-core, test-plugin]
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      DIST_DIR: ${{ github.workspace }}/dist
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - name: Restore pip cache volume
+        id: pip-cache
+        uses: actions/cache@v6
+        with:
+          path: ${{ runner.temp }}/pip-cache.tgz
+          key: pip-volume-${{ hashFiles('core/pyproject.toml', 'core/Dockerfile.pipx-test') }}
+          restore-keys: |
+            pip-volume-
+      - name: Unpack pip cache into docker volume
+        run: |
+          if [ -s "$RUNNER_TEMP/pip-cache.tgz" ]; then
+            docker volume create thabit-pip-cache
+            docker run --rm -v thabit-pip-cache:/vol -v "$RUNNER_TEMP":/b alpine:3 \
+              tar xzf /b/pip-cache.tgz -C /vol
+          fi
+      - name: Restore NuGet cache volume
+        id: nuget-cache
+        uses: actions/cache@v6
+        with:
+          path: ${{ runner.temp }}/nuget-cache.tgz
+          key: nuget-volume-${{ hashFiles('jellyfin-plugin/**/*.csproj', 'jellyfin-plugin/Directory.Packages.props', 'jellyfin-plugin/Dockerfile.builder') }}
+          restore-keys: |
+            nuget-volume-
+      - name: Unpack NuGet cache into docker volume
+        run: |
+          if [ -s "$RUNNER_TEMP/nuget-cache.tgz" ]; then
+            docker volume create jellyfin-plugin_nuget-cache
+            docker run --rm -v jellyfin-plugin_nuget-cache:/vol -v "$RUNNER_TEMP":/b alpine:3 \
+              tar xzf /b/nuget-cache.tgz -C /vol
+          fi
+      - name: Build all release artifacts (deploy.sh)
+        run: ./deploy.sh
+      - name: Validate built dist (manifest, checksum, sourceUrl)
+        run: python .github/scripts/validate-release-metadata.py --tag "${{ github.ref_name }}" --dist "$DIST_DIR"
+      - name: Warn if stamping dirtied tracked files
+        run: |
+          if [ -n "$(git status --porcelain -- jellyfin-plugin/build.yaml core/pyproject.toml)" ]; then
+            echo "::warning::deploy.sh changed tracked build.yaml/pyproject.toml - repo hygiene drift; commit these stamps before tagging the next release"
+            git status --porcelain -- jellyfin-plugin/build.yaml core/pyproject.toml
+          fi
+      - name: Pack pip cache volume
+        if: success() && steps.pip-cache.outputs.cache-hit != 'true'
+        run: |
+          docker run --rm -v thabit-pip-cache:/vol -v "$RUNNER_TEMP":/b alpine:3 \
+            tar czf /b/pip-cache.tgz -C /vol .
+      - name: Pack NuGet cache volume
+        if: success() && steps.nuget-cache.outputs.cache-hit != 'true'
+        run: |
+          docker run --rm -v jellyfin-plugin_nuget-cache:/vol -v "$RUNNER_TEMP":/b alpine:3 \
+            tar czf /b/nuget-cache.tgz -C /vol .
+      - name: Upload dist as workflow artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-dist
+          path: dist/*
+          if-no-files-found: error
+      - name: Create / update GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="${{ github.ref_name }}"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release upload "$tag" dist/* --clobber
+          else
+            gh release create "$tag" dist/* --verify-tag --title "$tag" --generate-notes
+          fi
+      - name: Commit refreshed manifest.json to main
+        run: |
+          git checkout -- jellyfin-plugin/build.yaml core/pyproject.toml
+          git switch -C main origin/main
+          cp "$DIST_DIR/manifest.json" manifest.json
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add manifest.json
+          if git diff --cached --quiet; then
+            echo "manifest.json on main is already up to date"
+          else
+            git commit -m "chore: refresh manifest.json for ${{ github.ref_name }}"
+            git push origin main
+          fi
+      - name: Publish wheel + sdist to PyPI (pipx channel)
+        env:
+          TWINE_USERNAME: __token__
+          TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
+        run: |
+          if [ -z "$TWINE_PASSWORD" ]; then
+            echo "::error::PYPI_API_TOKEN secret is not set - add it under Settings > Secrets and variables > Actions (release assets and manifest.json already landed)"
+            exit 1
+          fi
+          python -m pip install --quiet twine
+          python -m twine upload --non-interactive --skip-existing \
+            "$DIST_DIR"/thabit_translator-*.whl "$DIST_DIR"/thabit_translator-*.tar.gz

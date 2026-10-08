@@ -1,0 +1,144 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'core/**'
+      - 'jellyfin-plugin/**'
+      - 'metadata.conf'
+      - 'deploy.sh'
+      - '.github/**'
+  pull_request:
+    paths:
+      - 'core/**'
+      - 'jellyfin-plugin/**'
+      - 'metadata.conf'
+      - 'deploy.sh'
+      - '.github/**'
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: Release metadata sync
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - name: Validate four-way version sync
+        run: python .github/scripts/validate-release-metadata.py
+
+  changes:
+    name: Path filter
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      core: ${{ steps.filter.outputs.core }}
+      plugin: ${{ steps.filter.outputs.plugin }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: dorny/paths-filter@v4
+        id: filter
+        with:
+          filters: |
+            core:
+              - 'core/**'
+              - 'metadata.conf'
+              - 'deploy.sh'
+              - '.github/**'
+            plugin:
+              - 'jellyfin-plugin/**'
+              - 'metadata.conf'
+              - 'deploy.sh'
+              - '.github/**'
+
+  test-core:
+    name: Packaging test (pipx)
+    needs: [validate, changes]
+    if: success() && needs.changes.outputs.core == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+      - name: Restore pip cache volume
+        id: pip-cache
+        uses: actions/cache@v6
+        with:
+          path: ${{ runner.temp }}/pip-cache.tgz
+          key: pip-volume-${{ hashFiles('core/pyproject.toml', 'core/Dockerfile.pipx-test') }}
+          restore-keys: |
+            pip-volume-
+      - name: Unpack pip cache into docker volume
+        run: |
+          if [ -s "$RUNNER_TEMP/pip-cache.tgz" ]; then
+            docker volume create thabit-pip-cache
+            docker run --rm -v thabit-pip-cache:/vol -v "$RUNNER_TEMP":/b alpine:3 \
+              tar xzf /b/pip-cache.tgz -C /vol
+          fi
+      - name: Run packaging test
+        run: ./core/test-pipx.sh
+      - name: Pack pip cache volume
+        if: success() && steps.pip-cache.outputs.cache-hit != 'true'
+        run: |
+          docker run --rm -v thabit-pip-cache:/vol -v "$RUNNER_TEMP":/b alpine:3 \
+            tar czf /b/pip-cache.tgz -C /vol .
+
+  test-plugin:
+    name: Plugin tests + zip
+    needs: [validate, changes]
+    if: success() && needs.changes.outputs.plugin == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - name: Restore NuGet cache volume
+        id: nuget-cache
+        uses: actions/cache@v6
+        with:
+          path: ${{ runner.temp }}/nuget-cache.tgz
+          key: nuget-volume-${{ hashFiles('jellyfin-plugin/**/*.csproj', 'jellyfin-plugin/Directory.Packages.props', 'jellyfin-plugin/Dockerfile.builder') }}
+          restore-keys: |
+            nuget-volume-
+      - name: Unpack NuGet cache into docker volume
+        run: |
+          if [ -s "$RUNNER_TEMP/nuget-cache.tgz" ]; then
+            docker volume create jellyfin-plugin_nuget-cache
+            docker run --rm -v jellyfin-plugin_nuget-cache:/vol -v "$RUNNER_TEMP":/b alpine:3 \
+              tar xzf /b/nuget-cache.tgz -C /vol
+          fi
+      - name: Run xunit tests
+        working-directory: jellyfin-plugin
+        run: env UID="$(id -u)" GID="$(id -g)" docker compose run --rm plugin-test
+      - name: Build plugin zip
+        working-directory: jellyfin-plugin
+        run: env UID="$(id -u)" GID="$(id -g)" docker compose run --rm plugin-build
+      - name: Credential guard - zip must not contain .conf
+        run: |
+          zip=$(ls -t jellyfin-plugin/artifacts/*.zip | head -1)
+          if unzip -l "$zip" | grep -q '\.conf'; then
+            echo "::error::plugin zip contains a .conf file - credentials must never be packaged"
+            exit 1
+          fi
+      - name: Upload plugin zip
+        uses: actions/upload-artifact@v7
+        with:
+          name: jellyfin-plugin-zip
+          path: jellyfin-plugin/artifacts/*.zip
+          if-no-files-found: error
+      - name: Pack NuGet cache volume
+        if: success() && steps.nuget-cache.outputs.cache-hit != 'true'
+        run: |
+          docker run --rm -v jellyfin-plugin_nuget-cache:/vol -v "$RUNNER_TEMP":/b alpine:3 \
+            tar czf /b/nuget-cache.tgz -C /vol .

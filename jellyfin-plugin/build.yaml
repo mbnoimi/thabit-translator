@@ -10,7 +10,7 @@ description: >
   subtitles. The heavy lifting (subtitle download providers, embedded-track
   extraction, Argos translation, Vosk speech-to-text) is done by the bundled
   ThabitTranslator Python library, which runs inside the container image.
-owner: admino
+owner: mbnoimi
 category: Media playback
 artifacts:
   - Jellyfin.Plugin.ThabitTranslator.dll

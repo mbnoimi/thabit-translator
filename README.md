@@ -23,9 +23,6 @@ All commands below run from the repository root (`git clone … && cd thabit-tra
 - [Configuration](#configuration)
 - [Supported languages](#supported-languages)
 - [Output files](#output-files)
-- [Jellyfin plugin: build, run, test](#jellyfin-plugin-build-run-test)
-- [Releasing](#releasing)
-- [Development](#development)
 - [Troubleshooting](#troubleshooting)
 - [License](#license)
 - [Support](#support)
@@ -71,33 +68,23 @@ Notes:
 
 ### Jellyfin plugin
 
-Three ways to install, from most to least complete:
+Two ways to install a release:
 
-**A. This project's image (recommended)** — build the plugin, the image and start
-Jellyfin in one go:
+**A. Through this project's plugin repository (recommended)** — in Jellyfin
+(Dashboard → Plugins → Repositories → **+**), add the repository and install
+from the catalog:
 
-```bash
-cd jellyfin-plugin
+1. **Repository URL:** `https://raw.githubusercontent.com/mbnoimi/thabit-translator/main/manifest.json`
+2. Dashboard → Plugins → **Catalog** → search **Thabit Translator** → **Install**
+3. **Restart** Jellyfin (Installed → *Thabit Translator* → Restart)
 
-UID=$(id -u) GID=$(id -g) docker compose run --rm plugin-build        # build the plugin zip
-UID=$(id -u) GID=$(id -g) docker compose build jellyfin               # runtime image
-UID=$(id -u) GID=$(id -g) MEDIA_ROOT=/path/to/shows \
-    docker compose up -d jellyfin                                    # http://localhost:8096
-```
+This `manifest.json` is the plugin-repository catalog this project publishes: it
+is committed to `main` automatically by the release workflow, points its
+`sourceUrl` at the tagged GitHub release zip, and carries that zip's MD5 as
+`checksum` — Jellyfin verifies both on install and on updates, so a version
+bump only needs a `git tag v<version>` push.
 
-or just `./test.sh` (build + install + verify) and `./test-stop.sh` (graceful
-shutdown; state kept in `jf-config/`). The image ships python3, ffmpeg and the
-plugin; `entrypoint.sh` installs the plugin into `/config/plugins/` on every
-container start.
-
-**B. As a Jellyfin plugin repository (GitHub route)** — add
-`https://raw.githubusercontent.com/mbnoimi/thabit-translator/main/manifest.json`
-as a repository (Dashboard → Plugins → Repositories), install *Thabit
-Translator* from the Catalog and restart. The manifest points at the release zip
-(`sourceUrl`) and carries its MD5 (`checksum`); both are produced by
-[`deploy.sh`](#releasing) for the tagged release.
-
-**C. Manual copy** — unzip the release zip into the server's plugin directory and
+**B. Manual copy** — unzip the release zip into the server's plugin directory and
 restart:
 
 ```bash
@@ -109,7 +96,7 @@ unzip thabit-translator-plugin_<version>.zip -d <config>/plugins/Jellyfin.Plugin
 `/var/lib/jellyfin/plugins` for the deb/rpm packages. Jellyfin discovers plugins
 from *directories* containing the assembly — a loose `.zip` is not picked up.
 
-Runtime requirements for B and C (the official image misses all of these):
+Runtime requirements for A and B (the official image misses all of these):
 
 | Requirement | Notes |
 |---|---|
@@ -434,205 +421,6 @@ subtitle.srt        → subtitle.fr.srt  (French translation)
 The base name always matches the source file exactly, including zero padding:
 `Monk - S01E03.mp4` produces `Monk - S01E03.ar.srt`.
 
-## Jellyfin plugin: build, run, test
-
-```sh
-cd jellyfin-plugin
-
-# One shot - build the zip, build the image, start Jellyfin, install and verify
-./test.sh
-./test-stop.sh     # graceful shutdown (SIGTERM + 30s; state kept in jf-config/)
-
-# The same steps by hand (bash's UID is readonly, so it is injected with env(1))
-env UID=$(id -u) GID=$(id -g) docker compose run --rm plugin-build   # zip -> artifacts/
-env UID=$(id -u) GID=$(id -g) docker compose build jellyfin          # runtime image
-env UID=$(id -u) GID=$(id -g) MEDIA_ROOT=/path/to/shows docker compose up -d jellyfin
-```
-
-`MEDIA_ROOT` is mounted read-write at `/media` and defaults to the dev media
-folder; point it at something that exists (for the e2e use
-`MEDIA_ROOT=$PWD/media-test`).
-
-**The development loop is build → image → up (or `./test.sh`).**
-`entrypoint.sh` copies `/opt/thabit/plugin/*` (baked into the image) over
-`./config/plugins/…` on *every* container start, so a hand-copied DLL is silently
-replaced the next time the container restarts. Always rebuild the image.
-
-### How the plugin runs the pipeline
-
-The plugin is a **launcher for the library's CLI**: the .NET assembly embeds
-`core/**/*.py` (only `*.py` — never `thabit_translator.conf`), extracts it
-into the plugin data folder when the DLL changes, checks for a Python interpreter
-at install time, and then spawns
-
-```
-python3 <data>/library/thabit_translator/__main__.py auto <video path> -t <lang> …
-```
-
-The CLI bootstraps its own venv (`<data>/.venv_thabit`, CPU-only torch first) on
-first run — or up front via the **Prepare runtime** button on the config page.
-
-```
-Jellyfin 10.11 (jellyfin/jellyfin:10.11 + python3)
-└── /config/plugins/Jellyfin.Plugin.ThabitTranslator/
-    ├── Jellyfin.Plugin.ThabitTranslator.dll     installed by entrypoint.sh on start
-    ├── library/                                *.py extracted from the DLL (versioned marker)
-    │   └── thabit_translator/                   the package
-    │       ├── __main__.py                      the entry the plugin spawns
-    │       ├── app.py                           venv bootstrap + system check
-    │       ├── cli.py  core/  providers/
-    ├── .venv_thabit/                            created by the CLI's bootstrap on first run
-    ├── thabit_translator.conf                   regenerated from plugin settings
-    ├── staging/<itemId>_<lang>/                 symlink sandbox for manual downloads
-    └── home/                                   HOME/XDG for the child process (Argos/vosk cache)
-```
-
-A manual download goes through a **staging sandbox**: the runner creates
-`staging/<itemId>_<lang>/`, symlinks the video into it and hands the **symlink
-path** to the CLI, so extraction, intermediate `.srt` files and the final
-translation all land in staging — nothing is ever written to (or deleted from)
-the media folder by the library. The bytes are returned to Jellyfin through
-`DownloadSubtitles`, and Jellyfin writes them itself to
-`<video stem>.<lang>.srt` next to the video. Staging is removed on every exit
-path.
-
-Because the provider hides a language that already exists on disk, a second
-download of the same language is impossible — that is what keeps
-`.0.srt`/`.1.srt` duplicates from ever appearing. The scheduled task
-(*Fill in missing subtitles (Thabit Translator)*) uses the same runner but skips
-items whose subtitle already exists, items whose file is missing, and libraries
-where the provider is disabled as a subtitle fetcher.
-
-### Credential handling
-
-`core/thabit_translator.conf` holds real API credentials and must never
-enter an image layer — and it cannot: `core/` is not part of any Docker
-build context (`Dockerfile.dockerignore` allow-lists only `jellyfin-plugin/**`,
-with explicit denies as belt-and-braces), and the DLL embeds only `*.py` (a
-build guard in the csproj fails the build if anything else would be packed).
-Runtime credentials live in the plugin settings XML and the per-plugin
-`thabit_translator.conf`, both under `jf-config/` (never committed).
-
-### Tests
-
-```sh
-cd jellyfin-plugin
-
-# start the stack against the fixtures (the e2e asserts on media-test/)
-env UID=$(id -u) GID=$(id -g) MEDIA_ROOT=$PWD/media-test \
-    docker compose up -d --force-recreate jellyfin
-
-env UID=$(id -u) GID=$(id -g) docker compose run --rm plugin-test   # xunit (60 tests)
-python3 tests/e2e_smoke.py                                         # full HTTP round trip
-```
-
-`tests/e2e_smoke.py` is stdlib-only: it runs the startup wizard, logs in,
-creates a library over `media-test/`, searches for subtitles, downloads one
-(which runs the Python pipeline inside the container), and asserts that
-`<video stem>.ar.srt` exists with non-empty Arabic content, no duplicate was
-created, the provider hides a language it already produced, and the staging
-folder is empty afterwards. It is re-runnable: it never deletes anything, so
-delete the produced `.srt` first if you want the pipeline to run again.
-
-## Releasing
-
-Release metadata (version, maintainer, plugin catalog fields, PyPI description)
-lives in [`metadata.conf`](https://github.com/mbnoimi/thabit-translator/blob/main/metadata.conf) —
-**the one file you edit before a release**. `./deploy.sh` then prepares
-everything else:
-
-1. stamps `jellyfin-plugin/build.yaml` and `core/pyproject.toml` from it
-   (idempotent — a re-run never dirties git),
-2. builds the plugin zip + `manifest.json` into `<repo>/dist/`,
-3. builds the pipx sdist + wheel in Docker and runs `twine check` on them.
-
-```bash
-./deploy.sh          # both channels -> dist/
-```
-
-| Artifact | Purpose |
-|---|---|
-| `thabit-translator-plugin_<version>.zip` | manual plugin install (route C above) |
-| `manifest.json` | catalog file for a **GitHub plugin repository**, with the zip's MD5 baked in — copy it to the repo root |
-| `thabit_translator-<version>.whl` + `.tar.gz` | the PyPI release (`twine upload dist/thabit_translator-*`) |
-
-The actual `twine upload` is the one manual step; after it,
-`pipx install thabit-translator` is the whole CLI distribution.
-
-`deploy.sh` prints the MD5 of each artifact and refuses to package anything that
-would leak `core/thabit_translator.conf`, the file that holds the real
-provider keys.
-
-## Development
-
-```bash
-# Python package: run the checks you need from core/
-cd core && python3 -m thabit_translator --help
-
-# Plugin: xunit in Docker (see Tests above)
-cd jellyfin-plugin && env UID=$(id -u) GID=$(id -g) docker compose run --rm plugin-test
-
-# Packaging test: builds the wheel and installs it with pipx - inside Docker only,
-# your host pipx/venv is never touched
-./core/test-pipx.sh
-```
-
-- Contributor notes, architecture and hard-won constraints:
-  `ai/AGENTS.md` (local file in the project, not published to this repository)
-- Plugin design notes: `core/auto_mode.md`
-
-### Internal architecture
-
-```
-core/
-├── thabit_translator/          the Python package (PyPI: thabit-translator)
-│   ├── __main__.py             entry for `python3 -m` and the plugin spawn
-│   ├── app.py                  venv bootstrap + system check (CLI or lib)
-│   ├── cli.py                  subcommands + interactive menu
-│   ├── core/
-│   │   ├── config.py           config loading (+ first-run template copy)
-│   │   ├── extract.py          FFmpeg subtitle extraction
-│   │   ├── translate.py        Argos Translate wrapper
-│   │   ├── speech_to_text.py   Vosk STT wrapper
-│   │   ├── paths.py            input resolution (S01E3 -> S01E3 ...)
-│   │   ├── match.py            episode/title guard (guessit)
-│   │   └── auto_workflow.py    auto mode orchestration (file + folder batch)
-│   ├── providers/
-│   │   ├── __init__.py         provider dispatcher (NO_MATCH stops empty retries)
-│   │   ├── limits.py           shared quota/rate-limit state
-│   │   ├── opensubtitles.py    OpenSubtitles.com API (quota, structured search)
-│   │   ├── subdl.py            SubDL.com API (movie + tv search)
-│   │   └── subsource.py        SubSource.net API
-│   └── thabit_translator.conf.template   copied to ~/.config on first run
-├── pyproject.toml              PyPI package (version/description stamped by deploy.sh)
-├── test-pipx.sh                packaging test - Docker-only
-├── Dockerfile.pipx-test{,.dockerignore}  its build image + credential allow-list
-├── thabit_translator.conf      local provider keys (gitignored)
-└── auto_mode.md                plugin design notes
-```
-
-**CPU enforcement:** `ARGOS_DEVICE_TYPE=cpu`, `CUDA_VISIBLE_DEVICES` cleared,
-CPU-only torch from `https://download.pytorch.org/whl/cpu`, `imageio-ffmpeg` as
-extraction fallback.
-
-**Auto-environment:** every run bootstraps its dependencies before anything
-else — create the venv on first run, repair it later (install only what is
-missing), install CPU-only torch first (the default PyPI wheel drags in several
-GB of CUDA libraries; PyPI is only the fallback), then re-execute inside it.
-Where the venv lives depends on how you run it:
-
-- source checkout → `.venv_thabit` in the repository root (sibling of `core/`)
-- Jellyfin plugin → `<plugin data>/.venv_thabit` (sibling of the extracted `library/`)
-- pipx → the pipx venv itself is repaired in place, no extra venv
-
-Models cache in `~/.cache/thabit_translator/`. If the venv is beyond repair,
-delete it and rerun — it is recreated from scratch:
-
-```bash
-rm -rf .venv_thabit
-cd core && python3 -m thabit_translator --help
-```
-
 ## Troubleshooting
 
 ### CLI
@@ -658,7 +446,6 @@ cd core && python3 -m thabit_translator --help
 | Red banner "Python was not found" | install `python3` + `python3-venv` (or set the interpreter path) — the status API's `PythonDetail` says what was tried |
 | First run takes many minutes | normal: the venv bootstrap downloads ~1.6 GB once; use **Prepare runtime** to do it deliberately |
 | `STT skipped (no terminal to ask …)` | expected: STT policy is `ask` and a subprocess has no TTY; set the policy to `yes` to transcribe anyway |
-| Pipeline never runs | `docker compose build jellyfin` after `plugin-build`, then `up -d --force-recreate jellyfin` |
 
 ## License
 

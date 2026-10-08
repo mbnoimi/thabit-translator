@@ -9,7 +9,8 @@
 #   3. plugin zip       dist/thabit-translator-plugin_<version>.zip
 #   4. plugin manifest  dist/manifest.json (GitHub plugin repository)
 #   5. pipx artifacts   dist/thabit_translator-<version>.*.whl + .tar.gz
-#      (built in Docker and twine-checked; the upload itself stays manual)
+#      (built in Docker and twine-checked; push tag v<version> and
+#       .github/workflows/release.yml publishes everything automatically)
 #
 # Stamping is idempotent: a re-run with unchanged metadata rewrites nothing.
 #
@@ -360,9 +361,11 @@ Manual Jellyfin plugin install (no plugin repository):
    jellyfin-plugin/ ships both; see README.md)
 
 Plugin repository (GitHub):
-  copy $DIST_DIR/manifest.json to the repository root
+  push tag v$VERSION - the release workflow uploads dist/* to the GitHub
+  release and commits dist/manifest.json to main automatically
 
-PyPI upload (manual):
+PyPI upload:
+  handled by the release workflow (PYPI_API_TOKEN secret); manual fallback:
   twine upload $DIST_DIR/thabit_translator-*.whl $DIST_DIR/thabit_translator-*.tar.gz
   pipx install thabit-translator
 EOF
