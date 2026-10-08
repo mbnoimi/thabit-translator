@@ -12,8 +12,8 @@
         "targetAbi": "10.11.0.0",
         "changelog": "Initial release - subtitle provider, library sweep scheduled task, configuration page and status API.",
         "sourceUrl": "https://github.com/mbnoimi/thabit-translator/releases/download/v0.0.2.1/thabit-translator-plugin_0.0.2.1.zip",
-        "checksum": "4144d0c52d651d9ba1a48ff6e3410067",
-        "timestamp": "2026-10-08T01:14:18"
+        "checksum": "34b0e6f072dd7828df9f46c20828a022",
+        "timestamp": "2026-10-08T01:30:05"
       }
     ]
   }
