@@ -27,6 +27,26 @@ public class PythonRuntimeTests
     }
 
     [Fact]
+    public void Candidates_PortableInterpreterIsTriedLast()
+    {
+        var portable = Path.Combine("data", "runtime", "python", "bin", "python3");
+        var candidates = PythonRuntime.Candidates(null, portable);
+
+        // System interpreters first - the plugin's own download is the fallback.
+        Assert.Equal(
+            new[] { "python3", "python", "/usr/bin/python3", "/usr/local/bin/python3", portable },
+            candidates);
+    }
+
+    [Fact]
+    public void Candidates_PortableInterpreterIsDeduplicated()
+    {
+        var candidates = PythonRuntime.Candidates("/usr/bin/python3", "/usr/bin/python3");
+
+        Assert.Equal(new[] { "/usr/bin/python3", "python3", "python", "/usr/local/bin/python3" }, candidates);
+    }
+
+    [Fact]
     public void ProbeCandidate_MissingPath_FailsWithReason()
     {
         var (version, _, error) = PythonRuntime.ProbeCandidate("/nonexistent/definitely-not-python3");

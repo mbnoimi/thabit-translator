@@ -1,6 +1,6 @@
 name: Thabit Translator
 guid: 993545e6-8c2c-4074-bec4-8af2a39a976b
-version: 0.0.2.2
+version: 0.0.3.0
 targetAbi: 10.11.0.0
 framework: net9.0
 overview: Fetch, extract and translate subtitles using the ThabitTranslator library.
@@ -9,10 +9,17 @@ description: >
   menu plus a scheduled task that sweeps libraries and fills in missing
   subtitles. The heavy lifting (subtitle download providers, embedded-track
   extraction, Argos translation, Vosk speech-to-text) is done by the bundled
-  ThabitTranslator Python library, which runs inside the container image.
+  ThabitTranslator Python library, which the plugin runs standalone: the
+  library's sources are embedded in the plugin DLL, and it is executed with the
+  server's python3 or, when none is installed (as in the official Jellyfin
+  container image), a pinned portable CPython that the plugin downloads into
+  its data folder on first use. No custom Jellyfin image is required.
 owner: mbnoimi
 category: Media playback
 artifacts:
   - Jellyfin.Plugin.ThabitTranslator.dll
 changelog: >
-  0.0.2.2: Initial release - subtitle provider, library sweep scheduled task, configuration page and status API.
+  0.0.3.0: Standalone runtime: the plugin now runs on the official Jellyfin image
+  with no Python present - it auto-downloads a pinned portable CPython into its
+  data folder and bootstraps its own virtualenv. Removes the custom-image
+  requirement entirely.

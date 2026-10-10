@@ -65,7 +65,8 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
             else
             {
                 LogRuntime(
-                    $"Python not found - install python3 (with the venv module) or set an interpreter path. {python.Error}",
+                    $"Python not found - install python3 (with the venv module), set an interpreter path, or press "
+                    + $"'Prepare Python runtime' to download a portable Python. {python.Error}",
                     logToServer,
                     error: true);
             }

@@ -8,7 +8,8 @@ It ships in **two** forms:
 1. **CLI** — `core/`, the pipeline itself. Install it with
    [pipx](https://pipx.pypa.io/) from PyPI, or run it straight from a checkout.
 2. **Jellyfin 10.11+ plugin** — `jellyfin-plugin/`, a .NET assembly that runs that same
-   pipeline as a subprocess inside a derived `jellyfin/jellyfin:10.11` image.
+   pipeline as a subprocess. It works on the stock `jellyfin/jellyfin:10.11` image: when
+   the server has no system Python, the plugin downloads a pinned portable one itself.
 
 All commands below run from the repository root (`git clone … && cd thabit-translator`).
 
@@ -96,15 +97,26 @@ unzip thabit-translator-plugin_<version>.zip -d <config>/plugins/Jellyfin.Plugin
 `/var/lib/jellyfin/plugins` for the deb/rpm packages. Jellyfin discovers plugins
 from *directories* containing the assembly — a loose `.zip` is not picked up.
 
-Runtime requirements for A and B (the official image misses all of these):
+The official Docker image works as-is: install the plugin (A or B), restart,
+and the pipeline supplies whatever the image lacks itself (see the table).
+
+Runtime requirements for A and B:
 
 | Requirement | Notes |
 |---|---|
 | Jellyfin ≥ 10.11 | `targetAbi 10.11.0.0` |
-| `python3` + `python3-venv` | `python3 -m venv` must work (Debian: install `python3-venv`) |
-| `ffmpeg`/`ffprobe` on `PATH` | the official image keeps them only under `/usr/lib/jellyfin-ffmpeg/` |
-| Writable plugin data folder | `library/`, `.venv_thabit/`, `thabit_translator.conf`, `staging/`, `home/` live there |
+| Linux x86_64 or arm64 | the automatic Python bootstrap ships glibc builds for those two |
 | Ubuntu/Debian-family `/etc/os-release` | the library's own system check insists on it |
+| Writable plugin data folder | `library/`, `runtime/`, `.venv_thabit/`, `thabit_translator.conf`, `staging/`, `home/` live there |
+| Network on first use | the portable Python (~35 MB, once) and the ML stack (~1.6 GB, once) are downloaded once each |
+
+No host packages to install. When the server has no `python3` — the official
+image has none — the plugin downloads a pinned, SHA-256-verified portable CPython
+into its data folder (`runtime/`) and uses that; set the interpreter path on the
+config page instead if you prefer a system python (`python3 -m venv` must work —
+Debian: install `python3-venv`). `ffmpeg`/`ffprobe` need no PATH setup either:
+the official image keeps them only under `/usr/lib/jellyfin-ffmpeg/`, and the
+pipeline finds them there automatically.
 
 The DLL carries the whole Python library with it (extracted into the plugin data
 folder on load), and the venv bootstrap creates everything else on first run —
@@ -228,14 +240,13 @@ index.
 
 ### Provider limits and quota handling
 
-**OpenSubtitles** allows ~20 downloads per day per account. When the quota runs
-out the workflow falls back to Vosk STT for **every remaining video, folder mode
-included** — correct but very slow on long videos, so prefer running one season
-at a time. Once OpenSubtitles answers with HTTP 406 (`remaining: 0`) it is
-skipped until that response's `reset_time` (usually 23:59 UTC) and then
-**re-enabled automatically**, so a batch crossing the reset keeps working
-without a restart. Every mention of it names the cause — your *account's* limit,
-not "no subtitles":
+**OpenSubtitles** allows ~20 downloads/day per account; when that runs out the
+workflow falls back to Vosk STT for **every remaining video, folder mode
+included** — correct but slow, so prefer one season per run. On HTTP 406
+(`remaining: 0`) it is skipped until the response's `reset_time` (usually 23:59
+UTC) and **re-enabled automatically**, so a batch crossing the reset keeps
+working. Every mention names the cause — your *account's* limit, not "no
+subtitles":
 
 ```
 [WARN] OpenSubtitles: your account hit its daily download limit (20/day), reset Sun 02:59 +03
@@ -243,28 +254,21 @@ not "no subtitles":
 [INFO] OpenSubtitles skipped: your account's daily download limit until Sun 02:59 +03 - trying: subdl, subsource
 ```
 
-**SubDL**'s free plan allows 2,000 searches/day but only **50 downloads/day**
-(a download link without `api_key` is instead capped at 300/day per IP), so a
-SubDL 429 is nearly always the download quota, not a missing subtitle. The tool
-names which one it was, drops the provider for the rest of the run, and picks it
-up again on its own when the limit's own short window expires:
+**SubDL**'s free plan allows 2,000 searches/day but only **50 downloads/day** (an
+`api_key`-less link is capped at 300/day per IP instead), so a SubDL 429 is nearly
+always that download quota. The tool names which, drops the provider for the run,
+and picks it up again when the limit's window expires:
 
 ```
 [WARN] SubDL: your account's daily download limit is spent (50 downloads/day on the free plan)
 [INFO] subdl skipped: your account's daily download limit is spent (50 downloads/day on the free plan) - trying: subsource
 ```
 
-A short throttle (`Retry-After` up to 30s) is waited out and retried once instead
-of being given up on, and expired windows are re-checked. Missing or rejected
-credentials are reported once as a setup problem rather than retried for every
-candidate index of every video, and API keys are masked in logged download URLs.
-Each reason is printed **once per run**, so a season where all three providers
-are exhausted stays readable.
-
-Only OpenSubtitles supports a file-hash lookup, so SubDL and SubSource are asked
-**once** per video rather than twice (the "retry by query" pass used to repeat
-the exact same request). SubSource has no Monk TV episodes at all and returns
-irrelevant results — these are dropped by the relevance guard.
+A short `Retry-After` (≤30s) is waited out and retried once; expired windows are
+re-checked; missing/rejected credentials are reported once as a setup problem; API
+keys are masked in logged URLs; and each reason prints **once per run**. Only
+OpenSubtitles does file-hash lookup, so SubDL and SubSource are asked **once** per
+video (the old "retry by query" pass repeated the identical request).
 
 ### Other modes
 
@@ -410,16 +414,14 @@ curl -H "X-Emby-Token: $TOKEN" http://localhost:8096/ThabitTranslator/status
 
 ## Output files
 
-Subtitles are saved next to the input file, named after it:
+Subtitles are saved next to the input, with the base name matching the source
+exactly (including zero padding):
 
 ```
-movie.mp4           → movie.ar.srt     (Arabic subtitle)
-video.mkv           → video.en.srt     (English subtitle)
-subtitle.srt        → subtitle.fr.srt  (French translation)
+movie.mp4    → movie.ar.srt     (Arabic subtitle)
+video.mkv    → video.en.srt     (English subtitle)
+subtitle.srt → subtitle.fr.srt  (French translation)
 ```
-
-The base name always matches the source file exactly, including zero padding:
-`Monk - S01E03.mp4` produces `Monk - S01E03.ar.srt`.
 
 ## Troubleshooting
 
@@ -439,11 +441,11 @@ The base name always matches the source file exactly, including zero padding:
 
 | Symptom | Cause / fix |
 |---|---|
-| A hand-copied DLL "reverts" after a restart | `entrypoint.sh` reinstalls the image's plugin on every start — rebuild (build → image → up) |
+| Plugin installed but nothing runs, red banner "Python was not found" | press **Prepare runtime** on the config page — it downloads the portable Python automatically; or install `python3` + `python3-venv` / set the interpreter path. The status API's `PythonDetail` says what was tried |
+| No system python and no network | the portable Python needs one download (~35 MB from GitHub) — for fully offline servers install `python3` + `python3-venv` and set the interpreter path |
 | `ConfigurationPage` → 404 | wrong `name=`: use `Thabit Translator` (the page name), not the C# namespace |
 | 401 on API calls | `Authorization: MediaBrowser Token="<token>", Client=…, DeviceId=…, Version=…` — a *bare* `Token=` header is rejected |
 | "no API key configured" warnings | settings are empty; paste the keys on the config page |
-| Red banner "Python was not found" | install `python3` + `python3-venv` (or set the interpreter path) — the status API's `PythonDetail` says what was tried |
 | First run takes many minutes | normal: the venv bootstrap downloads ~1.6 GB once; use **Prepare runtime** to do it deliberately |
 | `STT skipped (no terminal to ask …)` | expected: STT policy is `ask` and a subprocess has no TTY; set the policy to `yes` to transcribe anyway |
 

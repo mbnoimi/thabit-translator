@@ -202,6 +202,17 @@ def bootstrap_environment(verbose=False):
     os.execv(venv_python, [venv_python, os.path.abspath(__file__)] + sys.argv[1:])
 
 
+def ensure_ffmpeg_on_path():
+    """Jellyfin's images keep ffmpeg/ffprobe only under /usr/lib/jellyfin-ffmpeg,
+    which is not on PATH: prepend it (once, in this process and every child it
+    spawns) whenever the tools are otherwise unreachable."""
+    if shutil.which("ffmpeg") and shutil.which("ffprobe"):
+        return
+    jellyfin_ffmpeg = "/usr/lib/jellyfin-ffmpeg"
+    if os.path.isdir(jellyfin_ffmpeg):
+        os.environ["PATH"] = jellyfin_ffmpeg + os.pathsep + os.environ.get("PATH", "")
+
+
 def check_system_requirements(verbose=True):
     try:
         with open("/etc/os-release", "r") as f:
@@ -251,6 +262,7 @@ def check_system_requirements(verbose=True):
 
 
 def main():
+    ensure_ffmpeg_on_path()
     bootstrap_environment()
     if not check_system_requirements(verbose=True):
         sys.exit(1)

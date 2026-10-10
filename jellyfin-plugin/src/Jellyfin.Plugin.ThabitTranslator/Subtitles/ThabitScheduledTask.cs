@@ -99,6 +99,24 @@ public sealed class ThabitScheduledTask : IScheduledTask, IConfigurableScheduled
             // Install-time preparation (extract the embedded library, probe python);
             // cached after the first call, so this stays cheap per sweep.
             var python = plugin.PrepareRuntime(logToServer: true);
+            if ((python is null || !python.Available) && string.IsNullOrWhiteSpace(config.PythonPath))
+            {
+                // Stock image, no system python: fetch the portable build first, so
+                // the sweep does not abort before any job could bootstrap it.
+                var bootstrap = await PortablePython.EnsureAsync(
+                    plugin.DataFolder,
+                    message => _logger.LogInformation("[thabit] {Message}", message),
+                    progress).ConfigureAwait(false);
+                if (bootstrap is null)
+                {
+                    python = plugin.PrepareRuntime(logToServer: true);
+                }
+                else
+                {
+                    _logger.LogWarning("Portable Python bootstrap: {Reason}", bootstrap);
+                }
+            }
+
             if (python is null || !python.Available)
             {
                 _logger.LogError(
