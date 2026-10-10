@@ -230,10 +230,35 @@ public sealed class ThabitRunner
 
         var config = plugin.Configuration;
         var python = PythonRuntime.Resolve(config);
+        string? bootstrapFailure = null;
+        if (!python.Available && string.IsNullOrWhiteSpace(config.PythonPath))
+        {
+            // Stock Jellyfin images ship no python: fetch the pinned portable build
+            // into the plugin data folder (throttled after failures; the explicit
+            // Prepare button forces a retry), then probe again - the interpreter
+            // path is a candidate in PythonRuntime now.
+            bootstrapFailure = await PortablePython.EnsureAsync(
+                plugin.DataFolder,
+                message => Log(LogLevel.Information, message),
+                progress,
+                force: runCli,
+                cancellationToken).ConfigureAwait(false);
+
+            if (bootstrapFailure is null)
+            {
+                python = PythonRuntime.Resolve(config);
+            }
+        }
+
         if (!python.Available)
         {
-            var reason = "python not found - install python3 (with the venv module) or set an interpreter path. "
-                + python.Error;
+            var hint = string.IsNullOrWhiteSpace(config.PythonPath)
+                ? "install python3 (with the venv module), set an interpreter path, or press "
+                    + "'Prepare Python runtime' on the configuration page to download a portable Python."
+                : "set a working interpreter path on the configuration page.";
+            var reason = "python not found - " + hint
+                + (bootstrapFailure is null ? string.Empty : " Portable bootstrap: " + bootstrapFailure + ".")
+                + " " + python.Error;
             Log(LogLevel.Error, reason);
             return reason;
         }

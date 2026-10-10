@@ -1,7 +1,6 @@
 artifacts/
 jf-config/
 jf-cache/
-jf-thabit-cache/
 media-test/
 .env
 bin/

@@ -1,4 +1,6 @@
 services:
+  # Compile/test toolchain (Dockerfile.builder = .NET SDK + jprm), NOT a
+  # Jellyfin image. The runtime pipeline uses only the stock jellyfin service.
   plugin-build:
     build:
       context: .
@@ -31,18 +33,24 @@ services:
       - "../core:/core:ro"
       - nuget-cache:/root/.nuget/packages
 
+  # Stock official instance - deliberately NOT a custom image: the plugin must
+  # run on any Jellyfin 10.11+ the user already has. ./test.sh unpacks the
+  # freshly built zip into jf-config/plugins/ before starting this, which is
+  # exactly the "manual copy" install from the README.
   jellyfin:
-    build:
-      context: ..
-      dockerfile: jellyfin-plugin/Dockerfile
-    image: thabit/jellyfin-with-plugin:10.11
+    image: jellyfin/jellyfin:10.11
+    labels:
+      # WUD (What's Up Docker) on this host keeps "updating" this service to a
+      # stale nightly image; the plugin must be tested against the stock image,
+      # so opt the container out of its watch.
+      wud.watch: "false"
     user: "${UID}:${GID}"
     ports:
       - "8096:8096"
     volumes:
       - "./jf-config:/config"
       - "./jf-cache:/cache"
-      - "${MEDIA_ROOT:-/home/admino/Videos/Shows/tmp/Monk}:/media:rw"
+      - "${MEDIA_ROOT:-./media-test}:/media:rw"
     restart: unless-stopped
 
 volumes:

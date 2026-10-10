@@ -29,10 +29,11 @@ public sealed record PythonRuntimeInfo
 
 /// <summary>
 /// The install-time "does this server have Python?" check: probes the configured
-/// interpreter first, then <c>python3</c>/<c>python</c> on PATH and the usual
-/// absolute locations. A successful probe is cached for the process (keyed on the
-/// configured path); failures are never cached, so installing python later works
-/// without a restart.
+/// interpreter first, then <c>python3</c>/<c>python</c> on PATH, the usual
+/// absolute locations and finally the portable interpreter the plugin itself
+/// installs (see <see cref="PortablePython"/>). A successful probe is cached for
+/// the process (keyed on the configured path); failures are never cached, so
+/// installing python later works without a restart.
 ///
 /// The interpreter only has to *host* the CLI: <c>thabit_translator/__main__.py</c> then
 /// bootstraps its own venv at <c>&lt;plugin data&gt;/.venv_thabit</c>.
@@ -60,11 +61,11 @@ public static class PythonRuntime
     private static PythonRuntimeInfo? s_cached;
     private static string? s_cachedKey;
 
-    /// <summary>Interpreters to try, in order (configured path first).</summary>
-    public static IReadOnlyList<string> Candidates(string? configured)
+    /// <summary>Interpreters to try, in order (configured path first, portable last).</summary>
+    public static IReadOnlyList<string> Candidates(string? configured, string? portable = null)
     {
         var seen = new HashSet<string>(StringComparer.Ordinal);
-        var candidates = new List<string>(5);
+        var candidates = new List<string>(6);
 
         void Add(string? candidate)
         {
@@ -80,7 +81,15 @@ public static class PythonRuntime
         Add("python");
         Add("/usr/bin/python3");
         Add("/usr/local/bin/python3");
+        Add(portable);
         return candidates;
+    }
+
+    /// <summary>The plugin's own portable interpreter, when the plugin is loaded.</summary>
+    private static string? PortableInterpreterPath()
+    {
+        var plugin = Plugin.Instance;
+        return plugin is null ? null : PortablePython.InterpreterPath(plugin.DataFolder);
     }
 
     /// <summary>
@@ -97,7 +106,7 @@ public static class PythonRuntime
                 return s_cached;
             }
 
-            var info = Probe(key);
+            var info = Probe(key, PortableInterpreterPath());
             if (info.Available)
             {
                 s_cached = info;
@@ -109,9 +118,9 @@ public static class PythonRuntime
     }
 
     /// <summary>Probe for tests and for a forced re-check; never throws.</summary>
-    public static PythonRuntimeInfo Probe(string? configured)
+    public static PythonRuntimeInfo Probe(string? configured, string? portable = null)
     {
-        var candidates = Candidates(configured);
+        var candidates = Candidates(configured, portable);
         string? firstError = null;
 
         foreach (var candidate in candidates)

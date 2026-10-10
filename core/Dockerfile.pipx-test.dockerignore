@@ -1,6 +1,5 @@
-# Allow-list for the packaging-test context (context = src/, same credential rule
-# as jellyfin-plugin/Dockerfile.dockerignore): only what building the wheel needs.
-# Last matching pattern wins, so the explicit conf deny below overrides !core.
+# Allow-list for the packaging-test context (context = src/): only what building the
+# wheel needs. Last matching pattern wins, so the explicit conf deny below overrides !core.
 *
 !README.md
 !LICENSE

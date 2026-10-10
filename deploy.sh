@@ -357,8 +357,8 @@ Manual Jellyfin plugin install (no plugin repository):
   unzip -o thabit-translator-plugin_${VERSION}.zip \\
         -d /config/plugins/Jellyfin.Plugin.ThabitTranslator
   restart Jellyfin -> Dashboard -> Plugins -> Thabit Translator
-  (the server also needs python3 + ffmpeg - the container image in
-   jellyfin-plugin/ ships both; see README.md)
+  (the plugin runs standalone: it uses the server's python3 if present, else
+   downloads a pinned portable Python on first use - no image requirements)
 
 Plugin repository (GitHub):
   push tag v$VERSION - the release workflow uploads dist/* to the GitHub

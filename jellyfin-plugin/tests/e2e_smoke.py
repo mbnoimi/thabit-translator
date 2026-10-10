@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """End-to-end smoke test for the Thabit Translator Jellyfin plugin.
 
-Talks to a running Jellyfin (the one from src/jellyfin-plugin/docker-compose.yml):
+Talks to a running Jellyfin (the one from src/jellyfin-plugin/docker-compose.yml -
+the stock ``jellyfin/jellyfin:10.11`` image, installed into by ``./test.sh``):
 creates the admin account, builds a library out of ``media-test``, searches for
 subtitles through the plugin's provider and downloads one - which makes the
 plugin run the real Python pipeline inside the container and lets Jellyfin save

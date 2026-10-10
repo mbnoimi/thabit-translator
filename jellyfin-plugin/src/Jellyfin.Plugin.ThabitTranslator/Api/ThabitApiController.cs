@@ -64,7 +64,10 @@ public sealed class ThabitApiController : ControllerBase
                 : python.Available
                     ? $"Python {python.Version} at {python.Path}"
                     + (python.VenvOk ? string.Empty : " (cannot create venvs - install python3-venv)")
-                    : python.Error ?? "no python interpreter found",
+                    : (python.Error ?? "no python interpreter found")
+                    + (string.IsNullOrWhiteSpace(config?.PythonPath)
+                        ? " - press 'Prepare Python runtime' to download a portable Python"
+                        : string.Empty),
             VenvReady = venvReady,
             LibraryPath = libraryPath,
             LibraryExtracted = libraryExtracted,
