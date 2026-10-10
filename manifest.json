@@ -5,15 +5,15 @@
     "owner": "mbnoimi",
     "category": "Media playback",
     "overview": "Fetch, extract and translate subtitles using the ThabitTranslator library.",
-    "description": "Adds a \"Thabit Translator\" subtitle provider to Jellyfin's per-item download menu plus a scheduled task that sweeps libraries and fills in missing subtitles. The heavy lifting (subtitle download providers, embedded-track extraction, Argos translation, Vosk speech-to-text) is done by the bundled ThabitTranslator Python library, which runs inside the container image.",
+    "description": "Adds a \"Thabit Translator\" subtitle provider to Jellyfin's per-item download menu plus a scheduled task that sweeps libraries and fills in missing subtitles. The heavy lifting (subtitle download providers, embedded-track extraction, Argos translation, Vosk speech-to-text) is done by the bundled ThabitTranslator Python library, which the plugin runs standalone: the library's sources are embedded in the plugin DLL, and it is executed with the server's python3 or, when none is installed (as in the official Jellyfin container image), a pinned portable CPython that the plugin downloads into its data folder on first use. No custom Jellyfin image is required.",
     "versions": [
       {
-        "version": "0.0.2.2",
+        "version": "0.0.3.0",
         "targetAbi": "10.11.0.0",
-        "changelog": "Initial release - subtitle provider, library sweep scheduled task, configuration page and status API.",
-        "sourceUrl": "https://github.com/mbnoimi/thabit-translator/releases/download/v0.0.2.2/thabit-translator-plugin_0.0.2.2.zip",
-        "checksum": "27b37bab3c62a03abc2560f8557fd45b",
-        "timestamp": "2026-10-08T02:17:19"
+        "changelog": "Standalone runtime: the plugin now runs on the official Jellyfin image with no Python present - it auto-downloads a pinned portable CPython into its data folder and bootstraps its own virtualenv. Removes the custom-image requirement entirely.",
+        "sourceUrl": "https://github.com/mbnoimi/thabit-translator/releases/download/v0.0.3.0/thabit-translator-plugin_0.0.3.0.zip",
+        "checksum": "5be460f693e68b047b85bf2f7169c5bf",
+        "timestamp": "2026-10-10T14:25:19"
       }
     ]
   }
